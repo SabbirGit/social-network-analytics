@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "social-network-analytics"
+version = "0.1.0"
+description = "Analyze undirected social networks from Python or CSV"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.scripts]
+social-network = "social_network_analytics.cli:main"

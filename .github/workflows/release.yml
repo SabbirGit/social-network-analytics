@@ -1,0 +1,56 @@
+name: Release Python wheel and container
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: v0.1.0
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build and test Python wheel
+        shell: bash
+        run: |
+          python -m pip wheel --no-deps --wheel-dir dist .
+          python -m pip install --no-deps dist/*.whl
+          python -c 'from importlib.metadata import version; import os; assert "v" + version("social-network-analytics") == os.environ["RELEASE_TAG"], "Tag must match the Python package version"'
+          social-network package/relationships.csv --nodes | python -c 'import json, sys; assert json.load(sys.stdin)["summary"]["edges"] == 4'
+      - name: Build and test container
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${RELEASE_TAG}"
+          docker build --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -t "$image" .
+          docker run --rm -v "$PWD/package:/data:ro" "$image" relationships.csv --nodes | python -c 'import json, sys; assert json.load(sys.stdin)["summary"]["edges"] == 4'
+      - name: Publish container to GitHub Packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${RELEASE_TAG}"
+          docker push "$image"
+      - name: Publish wheel to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/*.whl --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/*.whl --target "$GITHUB_SHA" --generate-notes
+          fi
